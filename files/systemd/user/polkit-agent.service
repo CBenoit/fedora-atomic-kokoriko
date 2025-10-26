@@ -1,0 +1,14 @@
+[Unit]
+Description=Polkit authentication agent (MATE)
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+Type=simple
+# Fedora package provides this binary as part of lxqt-policykit
+ExecStart=/usr/libexec/polkit-mate-authentication-agent-1
+Restart=on-failure
+
+[Install]
+WantedBy=niri.service

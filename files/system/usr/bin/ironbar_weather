@@ -1,0 +1,181 @@
+#!/usr/bin/env -S nu -n
+# Open-Meteo → ironbar (minimal)
+# - Bar:   #weather_current = "{icon} {+/-}{temp}°C" (from current_weather)
+# - Popup: two rows (i=0 today, i=1 tomorrow)
+#   - #weather_date_i : "M月D日（曜）HH:MM" at 09:00
+#   - #weather_09_i / _15_i / _21_i : hourly with icons
+#   - #weather_high_i / _avg_i / _low_i : daily aggregates (NO icon)
+
+let MORNING_HOUR   = "09:00"
+let AFTERNOON_HOUR = "15:00"
+let NIGHT_HOUR     = "21:00"
+
+# ---------- Geocoding ----------
+def get-coords [ --city: string --lat: float --lon: float ] {
+  if ($lat != null and $lon != null) { { lat: $lat, lon: $lon } } else {
+    let name = (if $city != null { $city } else { "Tokyo" })
+    let q = ($name | str replace -a ' ' '%20')
+    let url = $"https://geocoding-api.open-meteo.com/v1/search?name=($q)&count=1&language=en&format=json"
+    let r = (http get $url)
+    let first = ($r.results | get 0)
+    { lat: $first.latitude, lon: $first.longitude }
+  }
+}
+
+# ---------- Icons & formatting ----------
+def icon-for [wmo: int, is_day: bool] {
+  let groups = {
+    clear: [0] partly: [1 2] overcast: [3] fog: [45 48] drizzle: [51 53 55]
+    freezing: [56 57 66 67] rain: [61 63 65 80 81 82] snow: [71 73 75 77 85 86] thunder: [95 96 99]
+  }
+  let group = ($groups | transpose key codes | where { |r| $wmo in $r.codes } | get key | get 0 | default "unknown")
+  if $group == "clear" {
+    if $is_day { "☀️" } else { "🌙" }
+  } else if $group == "partly" {
+    if $is_day { "🌤️" } else { "🌙☁️" }
+  } else if $group == "overcast" {
+    "☁️"
+  } else if $group == "fog" {
+    "🌫️"
+  } else if $group == "drizzle" {
+    "🌦️"
+  } else if $group == "freezing" {
+    "🌧️"
+  } else if $group == "rain" {
+    "🌧️"
+  } else if $group == "snow" {
+    "🌨️"
+  } else if $group == "thunder" {
+    "⛈️"
+  } else {
+    "❓"
+  }
+}
+
+def signed-c [t: number] {
+  let tr = ($t | math round)
+  let sign = (if $tr >= 0 { "+" } else { "" })
+  $"($sign)($tr)°C"
+}
+
+def fmt-with-icon [code: int, is_day: bool, temp: number] { $"((icon-for $code $is_day)) (signed-c $temp)" }
+def fmt-temp [temp: number] { signed-c $temp }
+
+def fw-digits [s: string] {
+  let m = { "0":"０" "1":"１" "2":"２" "3":"３" "4":"４" "5":"５" "6":"６" "7":"７" "8":"８" "9":"９" }
+  $s | split chars | each {|c| ($m | get $c | default $c) } | str join
+}
+
+def jp-date-label [iso: string] {
+  let dt = ($iso | into datetime)
+  let m  = ($dt | format date "%m" | into int | into string)
+  let d  = ($dt | format date "%d" | into int | into string)
+  let w  = ($dt | format date "%w" | into int)
+  let jpw = (["日" "月" "火" "水" "木" "金" "土"] | get $w)
+  $"((fw-digits $m))月((fw-digits $d))日（($jpw)）"
+}
+
+# ---------- Hourly & daily helpers ----------
+def rows-from-hourly [hr] {
+  let n = ($hr.time | length)
+  (0..($n - 1) | each {|i|
+    { time: ($hr.time | get $i)
+      temp: ($hr.temperature_2m | get $i)
+      code: ($hr.weathercode | get $i)
+      is_day: ($hr.is_day | get $i) }
+  })
+}
+def date-of [iso: string] { $iso | split row 'T' | get 0 }
+def rows-for-date [rows, date: string] { $rows | where { |r| (date-of $r.time) == $date } }
+
+# Pick hour: exact "YYYY-MM-DDTHH:MM" if present, else any entry with same date + hour, else first row.
+def pick-hour [rows, date: string, hhmm: string] {
+  let exact = $"($date)T($hhmm)"
+  let c1 = ($rows | where time == $exact)
+  if (($c1 | length) > 0) { $c1 | get 0 } else {
+    let hh = ($hhmm | split row ":" | get 0)
+    let re = $"^($date)T($hh)"
+    let c2 = ($rows | where {|r| $r.time =~ $re})
+    if (($c2 | length) > 0) { $c2 | get 0 } else { $rows | get 0 }
+  }
+}
+
+# Build {date -> {max,min,mean}}
+def daily-agg-map [daily] {
+  let n = ($daily.time | length)
+  (0..($n - 1) | reduce -f {} {|i acc|
+    let d = ($daily.time | get $i)
+    $acc | upsert $d {
+      max:  ($daily.temperature_2m_max  | get $i)
+      min:  ($daily.temperature_2m_min  | get $i)
+      mean: ($daily.temperature_2m_mean | get $i | default null)
+    }
+  })
+}
+
+# Fallback mean from all hours if daily mean is missing
+def mean-temp-for-date [rows, date: string] {
+  let ts = (rows-for-date $rows $date | get temp)
+  if (($ts | length) > 0) { $ts | math avg } else { null }
+}
+
+# ---------- Main ----------
+def main [ --city (-c): string --lat: float --lon: float ] {
+  let loc = (get-coords --city $city --lat $lat --lon $lon)
+
+  let url = $'https://api.open-meteo.com/v1/forecast?latitude=($loc.lat)&longitude=($loc.lon)&hourly=temperature_2m,weathercode,is_day&current_weather=true&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&timezone=auto'
+  let resp = (http get $url)
+
+  let hr   = $resp.hourly
+  let cw   = $resp.current_weather
+  let dly  = $resp.daily
+
+  let rows = (rows-from-hourly $hr)
+  let dagg = (daily-agg-map $dly)
+
+  # Dates
+  let cur_date = (date-of $cw.time)
+  let all_dates = ($rows | each { |r| (date-of $r.time) } | uniq)
+  let tomorrow_date = (
+    $all_dates | where { |d| $d > $cur_date } | get 0
+    | default (date-of ($rows | get 24 | get time))
+  )
+
+  # Bar widget
+  ^ironbar var set weather_current (fmt-with-icon $cw.weathercode ($cw.is_day == 1) $cw.temperature)
+
+  # Fill a popup row (i = 0 today, 1 tomorrow)
+  def set-day [i: int, date: string] {
+    let r09 = (pick-hour $rows $date $MORNING_HOUR)
+    let r15 = (pick-hour $rows $date $AFTERNOON_HOUR)
+    let r21 = (pick-hour $rows $date $NIGHT_HOUR)
+
+    ^ironbar var set $"weather_date_($i)" (jp-date-label $date)
+    ^ironbar var set $"weather_09_($i)" (fmt-with-icon $r09.code ($r09.is_day == 1) $r09.temp)
+    ^ironbar var set $"weather_15_($i)" (fmt-with-icon $r15.code ($r15.is_day == 1) $r15.temp)
+    ^ironbar var set $"weather_21_($i)" (fmt-with-icon $r21.code ($r21.is_day == 1) $r21.temp)
+
+    # Daily aggregates: temp only (no icons)
+    let d = ($dagg | get $date | default null)
+    if $d != null {
+      ^ironbar var set $"weather_high_($i)" (fmt-temp $d.max)
+      ^ironbar var set $"weather_low_($i)"  (fmt-temp $d.min)
+      ^ironbar var set $"weather_avg_($i)"  (fmt-temp ($d.mean | default (mean-temp-for-date $rows $date)))
+    } else {
+      # Fallback when daily block is missing
+      let day_rows = (rows-for-date $rows $date)
+      if (($day_rows | length) > 0) {
+        ^ironbar var set $"weather_high_($i)" (fmt-temp (($day_rows | get temp) | math max))
+        ^ironbar var set $"weather_low_($i)"  (fmt-temp (($day_rows | get temp) | math min))
+        ^ironbar var set $"weather_avg_($i)"  (fmt-temp (($day_rows | get temp) | math avg))
+      } else {
+        ^ironbar var set $"weather_high_($i)" ""
+        ^ironbar var set $"weather_low_($i)"  ""
+        ^ironbar var set $"weather_avg_($i)"  ""
+      }
+    }
+  }
+
+  set-day 0 $cur_date
+  set-day 1 $tomorrow_date
+}

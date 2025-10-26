@@ -1,0 +1,16 @@
+[Unit]
+Description=Fcitx5 input method
+Documentation=man:fcitx5(1)
+After=graphical-session.target
+PartOf=niri.service
+
+[Service]
+Type=dbus
+BusName=org.fcitx.Fcitx5
+ExecStart=/usr/bin/fcitx5
+Restart=on-failure
+
+[Install]
+WantedBy=niri.service
+WantedBy=graphical-session.target
+

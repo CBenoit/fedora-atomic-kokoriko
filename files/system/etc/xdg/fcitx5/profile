@@ -1,0 +1,15 @@
+[Groups/0]
+Name=Default
+Default Layout=fr-bepo_afnor
+DefaultIM=keyboard-fr-bepo_afnor
+
+[Groups/0/Items/0]
+Name=keyboard-fr-bepo_afnor
+Layout=
+
+[Groups/0/Items/1]
+Name=mozc
+Layout=
+
+[GroupOrder]
+0=Default

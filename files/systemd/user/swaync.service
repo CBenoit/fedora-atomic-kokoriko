@@ -1,0 +1,14 @@
+[Unit]
+Description=Sway Notification Center
+After=graphical-session.target
+PartOf=niri.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/swaync
+Restart=on-failure
+
+[Install]
+WantedBy=niri.service
+WantedBy=graphical-session.target
+

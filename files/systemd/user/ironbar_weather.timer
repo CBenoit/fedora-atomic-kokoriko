@@ -1,0 +1,16 @@
+[Unit]
+Description=Run ironbar_weather hourly
+PartOf=ironbar.service
+After=ironbar.service
+
+[Timer]
+Unit=ironbar_weather.service
+OnCalendar=hourly
+OnActiveSec=1s
+AccuracySec=15s
+Persistent=true
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=ironbar.service
+

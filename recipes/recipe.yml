@@ -1,45 +1,324 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/recipe-v1.json
-# image will be published to ghcr.io/<user>/<name>
-name: template
-# description will be included in the image's metadata
-description: This is my personal OS image.
+# Image will be published to ghcr.io/<user>/<name>.
+name: atomic-kokoriko
 
-# the base image to build on top of (FROM) and the version tag to use
-base-image: ghcr.io/ublue-os/silverblue-main
-image-version: 42 # latest is also supported if you want new updates ASAP
+# Description will be included in the image's metadata.
+description: "Niri Atomic + minimal host + Toolbox dev stack (Rust/.NET/Node) with Helix & Nushell"
 
-# module configuration, executed in order
-# you can include multiple instances of the same module
+# The base image to build on top of (FROM) and the version tag to use.
+# Use the smallest universal blue base rather than the sway‑flavoured variant.
+base-image: ghcr.io/ublue-os/base-main
+image-version: "42"
+
+# TODO: gtkgreet theme?
+# TODO: nm-applet? NetworkManager Applet?
+# TODO: light? light gets and sets the screen back-light brightness on Linux.
+
+# The module configuration describes what is done to the base image.
+# Modules are executed in order.
 modules:
+  # Drop in small system defaults (land in /usr/etc at runtime).
   - type: files
     files:
       - source: system
-        destination: / # copies files/system/* (* means everything inside it) into your image's root folder /
+        destination: / # Copies files/system/* (* means everything inside it) into image's root folder /.
 
+  - type: script
+    snippets:
+      - mkdir -p /etc/niri/
+      - curl -f https://raw.githubusercontent.com/CBenoit/dotfiles/refs/heads/master/home/dot_config/niri/config.kdl -o /etc/niri/config.kdl
+      - mkdir -p /etc/skel/.config/ironbar/
+      - curl -f https://raw.githubusercontent.com/CBenoit/dotfiles/refs/heads/master/home/dot_config/ironbar/config.yaml -o /etc/skel/.config/ironbar/config.yaml
+      - curl -f https://raw.githubusercontent.com/CBenoit/dotfiles/refs/heads/master/home/dot_config/ironbar/style.css -o /etc/skel/.config/ironbar/style.css
+
+  # Retrieve the ironbar binary from the associated build stage.
+  - type: copy
+    from: ironbar
+    src: /out/bin/ironbar
+    dest: /usr/bin/
+
+  # Retrieve the broot binary from the associated build stage.
+  - type: copy
+    from: broot
+    src: /out/bin/broot
+    dest: /usr/bin/
+
+  - type: copy
+    from: ast-grep
+    src: /out/bin/ast-grep
+    dest: /usr/bin/
+
+  - type: copy
+    from: carapace
+    src: /out/bin/carapace
+    dest: /usr/bin/
+
+  # Install packages and remove unwanted ones via DNF.
   - type: dnf
     repos:
       copr:
         - atim/starship
+        - atim/nushell # Latest versions of nushell.
+
     install:
       packages:
-        - micro
-        - starship
+        # Useful CLI utilities.
+        - helix    # TUI editor on the host
+        - nushell  # Nushell, the official package is named "nu", but is a bit old, so we use "nushell" from "atim/nushell".
+        - starship # Shell prompt
+        - zoxide   # Smarter cd
+        - git
+        - git-delta
+        - difftastic
+        - gitui
+        - ripgrep
+        - fd-find
+        - wireshark-cli # tshark + dumpcap
+        - tcpdump
+        - nmap
+        - skim
+        - diskonaut
+        - task  # Taskwarrior
+        - timew # Timewarrior
+        - rmlint
+        - rsync
+        - bat # Can be used as a pager for man pages.
+        - imv # Command line image viewer intended for use with tiling window managers.
+
+        # Dynamic display configuration tool.
+        - kanshi
+
+        # Dialogs for scripts (e.g.: used in ujust)
+        - gum
+
+        # SUID sandbox program for untrusted applications.
+        - firejail
+
+        # Lightweight Wayland terminal.
+        - foot
+
+        # Scrollable tiling wayland compositor.
+        - niri
+
+        # Application launcher.
+        - fuzzel
+
+        # Login manager.
+        - greetd
+        - gtkgreet
+        - cage
+
+        # Wallpaper setter.
+        - swaybg
+
+        # Screen locker.
+        - swaylock
+        - swayidle
+
+        # Screen share / file pickers can be flaky without a portal backend.
+        # Minimal & DE-agnostic:
+        - xdg-desktop-portal
+        - xdg-desktop-portal-gtk
+
+        # Input method framework (IME) and addons.
+        - fcitx5
+        - fcitx5-gtk
+        - fcitx5-qt
+        - fcitx5-mozc # Japanese input engine for Mozc
+        - fcitx5-configtool
+
+        # Ironbar runtime libs.
+        - gtk4
+        - gtk4-layer-shell
+
+        # Icon theming & loaders for symbolic/tray icons.
+        - adwaita-icon-theme
+        - hicolor-icon-theme
+
+        # Utilities for bar modules.
+        - playerctl    # MPRIS control for music module.
+        - wl-clipboard # Clipboard utility used by some ironbar modules.
+        - upower       # For battery module.
+        - nm-connection-editor # TODO: learn more about this. Is it used by the network-manager module?
+        - network-manager-applet # FIXME: The network-manager module seems unfinished, so I’ll rely on nm applet for now.
+
+        # Audio stack (PipeWire and its session manager) for volume control.
+        - pipewire
+        - wireplumber
+
+        # GPU/DRM/Vulkan drivers (ensure EGL features are present)
+        - mesa-dri-drivers
+        - mesa-vulkan-drivers
+
+        # Bluetooth stack.
+        - bluez          # bluetoothd, bluetoothctl
+        # - bluez-obexd  # OBEX file transfer (used by Blueman)
+        # - blueman      # tray applet & pairing UI
+
+        # Actively maintained PolicyKit agent
+        - mate-polkit
+
+        # Ensure we have the en_DK locale available.
+        - glibc-langpack-en
+
+        # Enable file pickers (portals)
+        - xdg-desktop-portal-gtk # "Default fallback portal", implementing most of the basic functionnality.
+        - xdg-desktop-portal-gnome # Required for niri screencasting support.
+        - gnome-keyring # Implements the Secret portal, required for certain apps to work.
+
+        # Notifications.
+        - SwayNotificationCenter # swaync daemon + swaync-client
+
+        # File Explorer.
+        - nautilus # Nautilus is used as the default file picker by xdg-desktop-portal-gnome from version 47.0.
+        - pcmanfm # I just prefer PCManFM otherwise.
+        # TODO: Consider yazi as a terminal-based alternative
+
+        # Day/night gamma adjustements for Wayland.
+        - wlsunset
+
     remove:
       packages:
-        # example: removing firefox (in favor of the flatpak)
-        # "firefox" is the main package, "firefox-langpacks" is a dependency
+        # Remove Firefox in favour of the Zen browser flatpak.
         - firefox
-        - firefox-langpacks # also remove firefox dependency (not required for all packages, this is a special case)
+        - firefox-langpacks
 
+  # Default flatpaks for a minimal but usable desktop.
+  # Zen Browser replaces Firefox.
   - type: default-flatpaks
     configurations:
-      - notify: true # Send notification after install/uninstall is finished (true/false)
+      # System flatpaks we want all users to have and not remove.
+      - notify: true # Send notification after install/uninstall is finished.
         scope: system
-        # If no repo information is specified, Flathub will be used by default
-        install: # system flatpaks we want all users to have and not remove
-          - org.mozilla.firefox
+        install:
+          - app.zen_browser.zen
           - org.gnome.Loupe
-      - scope: user # Also add Flathub user repo, but no user packages
+          - com.visualstudio.code
+          - com.github.tchx84.Flatseal
+          - io.github.flattool.Warehouse
+          - org.wireshark.Wireshark # The flatpak itself does not support capture, but it’s possible to pipe tshark. 
+          - net.cozic.joplin_desktop
+          - org.kde.okular
+          - io.mpv.Mpv
+          - com.github.huluti.Curtail
+          - org.jousse.vincent.Pomodorolm
+          - com.logseq.Logseq
 
-  - type: signing # this sets up the proper policy & signing files for signed images to work fully
+      # Also add Flathub user repo, but no user packages.
+      - scope: user
+
+  # Developer fonts.
+  # JetBrains Mono Nerd Font provides the glyphs used by ironbar and the terminal.
+  # NerdFontsSymbolsOnly ensures extra icons are available without pulling in entire fonts.
+  - type: fonts
+    fonts:
+      nerd-fonts:
+        - JetBrainsMono
+        - FiraCode
+        - NerdFontsSymbolsOnly
+
+  # Provide ujust commands for provisioning dev container(s).
+  - type: justfiles
+
+  # Use Chezmoi to layer in dotfiles.
+  # Disable init to avoid interfering with host files during build.
+  # Dotfiles live at the referenced repository.
+  - type: chezmoi
+    disable-init: false
+    all-users: true
+    repository: "https://github.com/CBenoit/dotfiles"
+    file-conflict-policy: skip
+
+  # (Optional) If you need NVIDIA/other kernel modules later:
+  # - type: akmods
+  #   nvidia-driver: nvidia-open
+  #   install: []
+
+  - type: gschema-overrides
+    include:
+      # zz1- prefix ensures our defaults win over Fedora’s.
+      - zz1-adwaita-dark.gschema.override
+
+  - type: systemd
+    system:
+      enabled:
+        - bluetooth.service
+        - greetd.service
+    user:
+      enabled:
+        - swaync.service
+        - fcitx5.service
+        - swaybg.service
+        - swayidle.service
+        - ironbar.service
+        - ironbar_weather.timer
+        - wlsunset.service
+        - polkit-agent.service
+
+  # This sets up the proper policy & signing files for signed images to work fully.
+  - type: signing
+
+stages:
+  # TODO: consider downloading from the GitHub release: https://github.com/JakeStanger/ironbar/releases/tag/v0.17.1
+  - name: ironbar
+    # Use Fedora 42 image to ensure we link against the correct libraries versions and ABIs (important for GTK apps).
+    # Build on Fedora, run on Fedora.
+    from: ghcr.io/ublue-os/base-main:42
+    modules:
+      - type: dnf
+        install:
+          packages:
+            # Build tools.
+            - rust
+            - cargo
+            - gcc
+
+            # ironbar build deps.
+            - gtk4-devel
+            - gtk4-layer-shell-devel
+            - dbus-devel
+            - pkgconf-pkg-config
+            - openssl-devel
+            - pulseaudio-libs-devel
+            - libinput-devel
+            - luajit-devel
+            - lua-lgi
+            - atk-devel
+      - type: script
+        snippets:
+          # Build straight from crates.io.
+          - cargo install --locked ironbar --git https://github.com/JakeStanger/ironbar --rev 68e1f8adc6b4edb78c29d62383999d67ac544576 --root /out --no-default-features --features http,config+yaml,cli,battery,bluetooth,clipboard,clock,focused,music+mpris,network_manager,notifications,sys_info,tray,volume,workspaces+niri,script,custom
+          # Probably not required, but strip the debug symbols.
+          - strip /out/bin/ironbar
+
+  - name: broot
+    from: ghcr.io/ublue-os/base-main:42
+    modules:
+      - type: script
+        snippets:
+          - curl -fL https://github.com/Canop/broot/releases/download/v1.51.0/broot_1.51.0.zip -o broot.zip
+          - unzip broot.zip -d broot
+          - mkdir -p /out/bin
+          - mv ./broot/x86_64-unknown-linux-gnu/broot /out/bin/broot
+
+  - name: ast-grep
+    from: ghcr.io/ublue-os/base-main:42
+    modules:
+      - type: script
+        snippets:
+          - curl -fL https://github.com/ast-grep/ast-grep/releases/download/0.39.6/app-x86_64-unknown-linux-gnu.zip -o app.zip
+          - unzip app.zip -d app
+          - mkdir -p /out/bin
+          - mv ./app/ast-grep /out/bin/ast-grep
+
+  - name: carapace
+    from: ghcr.io/ublue-os/base-main:42
+    modules:
+      - type: script
+        snippets:
+          - curl -fL https://github.com/carapace-sh/carapace-bin/releases/download/v1.5.3/carapace-bin_1.5.3_linux_amd64.tar.gz -o carapace.tar.gz
+          - mkdir carapace
+          - tar xf carapace.tar.gz --directory carapace
+          - mkdir -p /out/bin
+          - mv ./carapace/carapace /out/bin/carapace
