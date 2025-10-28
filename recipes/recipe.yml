@@ -132,6 +132,7 @@ modules:
         # Ironbar runtime libs.
         - gtk4
         - gtk4-layer-shell
+        - luajit # For lua-cairo support. I don’t need that, so I may consider removing this module from ironbar.
 
         # Icon theming & loaders for symbolic/tray icons.
         - adwaita-icon-theme
@@ -268,7 +269,8 @@ modules:
   - type: signing
 
 stages:
-  # TODO: consider downloading from the GitHub release: https://github.com/JakeStanger/ironbar/releases/tag/v0.17.1
+  # TODO: consider downloading from the GitHub release: https://github.com/JakeStanger/ironbar/releases/
+  # NOTE: Waiting for v0.18.0 for GTK4 support.
   - name: ironbar
     # Use Fedora 42 image to ensure we link against the correct libraries versions and ABIs (important for GTK apps).
     # Build on Fedora, run on Fedora.
@@ -293,10 +295,11 @@ stages:
             - luajit-devel
             - lua-lgi
             - atk-devel
+            - libevdev-devel
       - type: script
         snippets:
-          # Build straight from crates.io.
-          - cargo install --locked ironbar --git https://github.com/JakeStanger/ironbar --rev 68e1f8adc6b4edb78c29d62383999d67ac544576 --root /out --no-default-features --features http,config+yaml,cli,battery,bluetooth,clipboard,clock,focused,music+mpris,network_manager,notifications,sys_info,tray,volume,workspaces+niri,script,custom
+          # Build straight from GitHub repo.
+          - cargo install --locked ironbar --git https://github.com/JakeStanger/ironbar --rev 70a731fd7f32ccef5760b88f6a61c956c45a0805 --root /out
           # Probably not required, but strip the debug symbols.
           - strip /out/bin/ironbar
 
