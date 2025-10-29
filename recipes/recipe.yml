@@ -192,6 +192,16 @@ modules:
         - firefox
         - firefox-langpacks
 
+  # Fix dumpcap group.
+  - type: script
+    snippets:
+      # Use the GID we hardcoded for wireshark.
+      - chgrp 61184 /usr/bin/dumpcap
+      # Ensure proper permissions.
+      - chmod 0750 /usr/bin/dumpcap
+      # Ensure correct capabilities.
+      - setcap cap_net_admin,cap_net_raw=ep /usr/bin/dumpcap
+
   # Default flatpaks for a minimal but usable desktop.
   # Zen Browser replaces Firefox.
   - type: default-flatpaks
@@ -254,6 +264,7 @@ modules:
         - bluetooth.service
         - greetd.service
         - keyd.service
+        - wireshark-gid-reconcile.service
     user:
       enabled:
         - swaync.service

@@ -1,0 +1,11 @@
+[Unit]
+Description=Reconcile wireshark group GID after rebase
+After=local-fs.target sysinit.target
+ConditionPathExists=!/etc/.wireshark-gid-reconciled-61184
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/wireshark-gid-reconcile.sh
+
+[Install]
+WantedBy=multi-user.target
