@@ -186,6 +186,9 @@ modules:
         # Key remapping daemon.
         - keyd
 
+        # Support for docker-compose.yml files.
+        - podman-compose
+
     remove:
       packages:
         # Remove Firefox in favour of the Zen browser flatpak.
