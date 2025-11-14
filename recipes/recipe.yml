@@ -225,6 +225,8 @@ modules:
           - com.github.huluti.Curtail
           - org.jousse.vincent.Pomodorolm
           - com.logseq.Logseq
+          - com.usebottles.bottles
+          - org.gnome.SimpleScan
 
       # Also add Flathub user repo, but no user packages.
       - scope: user
